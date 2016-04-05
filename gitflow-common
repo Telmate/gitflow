@@ -9,17 +9,17 @@
 #    http://github.com/Telmate/gitflow
 #
 # Copyright 2010 Vincent Driessen. All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #    1. Redistributions of source code must retain the above copyright notice,
 #       this list of conditions and the following disclaimer.
-# 
+#
 #    2. Redistributions in binary form must reproduce the above copyright
 #       notice, this list of conditions and the following disclaimer in the
 #       documentation and/or other materials provided with the distribution.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY VINCENT DRIESSEN ``AS IS'' AND ANY EXPRESS OR
 # IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 # MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
@@ -30,7 +30,7 @@
 # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-# 
+#
 # The views and conclusions contained in the software and documentation are
 # those of the authors and should not be interpreted as representing official
 # policies, either expressed or implied, of Vincent Driessen.
@@ -152,39 +152,59 @@ git_is_branch_merged_into() {
 # gitflow specific common functionality
 #
 
-# check if this repo has been inited for gitflow
-gitflow_has_master_configured() {
-	local master=$(git config --get gitflow.branch.master)
-	[ "$master" != "" ] && git_local_branch_exists "$master"
-}
+latest_release_branch() {
+	vercomp () {
+    if [[ $1 == $2 ]]
+    then
+        return 0
+    fi
+    local IFS=.
+    local i ver1=($1) ver2=($2)
+    # fill empty fields in ver1 with zeros
+    for ((i=${#ver1[@]}; i<${#ver2[@]}; i++))
+    do
+        ver1[i]=0
+    done
+    for ((i=0; i<${#ver1[@]}; i++))
+    do
+        if [[ -z ${ver2[i]} ]]
+        then
+            # fill empty fields in ver2 with zeros
+            ver2[i]=0
+        fi
+        if ((10#${ver1[i]} > 10#${ver2[i]}))
+        then
+            return 1
+        fi
+        if ((10#${ver1[i]} < 10#${ver2[i]}))
+        then
+            return 2
+        fi
+    done
+    return 0
+	}
 
-gitflow_has_develop_configured() {
-	local develop=$(git config --get gitflow.branch.develop)
-	[ "$develop" != "" ] && git_local_branch_exists "$develop"
-}
+	max_branch=''
+	max="0.0.0"
+	for branch in `git branch -r  | grep -E 'origin/release/[0-9]'`
+	do
+	  current_version=$(echo $branch | sed 's/[a-z\/]//g')
 
-gitflow_has_prefixes_configured() {
-	git config --get gitflow.prefix.feature >/dev/null 2>&1     && \
-	git config --get gitflow.prefix.release >/dev/null 2>&1     && \
-	git config --get gitflow.prefix.hotfix >/dev/null 2>&1      && \
-	git config --get gitflow.prefix.support >/dev/null 2>&1     && \
-	git config --get gitflow.prefix.versiontag >/dev/null 2>&1
-}
+	  vercomp $max, $current_version
+	  case $? in
+	        2) max=$current_version && max_branch=$branch;;
+	  esac
+	done
 
-gitflow_is_initialized() {
-	gitflow_has_master_configured                    && \
-	gitflow_has_develop_configured                   && \
-	[ "$(git config --get gitflow.branch.master)" !=    \
-	  "$(git config --get gitflow.branch.develop)" ] && \
-	gitflow_has_prefixes_configured
+	echo $max_branch | sed 's/origin\///g'
 }
 
 # loading settings that can be overridden using git config
 gitflow_load_settings() {
 	export DOT_GIT_DIR=$(git rev-parse --git-dir >/dev/null 2>&1)
-	export MASTER_BRANCH=$(git config --get gitflow.branch.master)
-	export DEVELOP_BRANCH=$(git config --get gitflow.branch.develop)
-	export ORIGIN=$(git config --get gitflow.origin || echo origin)
+	export MASTER_BRANCH="master"
+	export DEVELOP_BRANCH=$(latest_release_branch)
+	export ORIGIN="origin "
 }
 
 #
@@ -243,12 +263,6 @@ gitflow_resolve_nameprefix() {
 require_git_repo() {
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
 		die "fatal: Not a git repository"
-	fi
-}
-
-require_gitflow_initialized() {
-	if ! gitflow_is_initialized; then
-		die "fatal: Not a gitflow-enabled repo yet. Please run \"git flow init\" first."
 	fi
 }
 
