@@ -72,7 +72,7 @@ Release date: **2010/07/22**
 
 * Added BSD license.
 
-[1]: http://github.com/nvie/gitflow/commit/f68d405cc3a11e9df3671f567658a6ab6ed8e0a1
+[1]: http://github.com/Telmate/gitflow/commit/f68d405cc3a11e9df3671f567658a6ab6ed8e0a1
 [2]: http://github.com/talios
 [3]: http://github.com/rickosborne
 
