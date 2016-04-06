@@ -196,7 +196,11 @@ latest_release_branch() {
 	  esac
 	done
 
-	echo $max_branch | sed 's/origin\///g'
+	if [ "$max" == "0.0.0" ]; then
+		echo "master"
+	else
+		echo $max_branch | sed 's/origin\///g'
+	fi
 }
 
 # loading settings that can be overridden using git config
