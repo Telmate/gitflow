@@ -220,7 +220,11 @@ cmd_start() {
 	echo "- A new branch '$BRANCH' was created, based on '$BASE'"
 	echo "- You are now on branch '$BRANCH'"
 	echo ""
-	echo "Now, start committing on your feature. When done, use:"
+	echo "Now, start committing on your feature. When ready to test, use:"
+	echo ""
+	echo "     git flow feature test $NAME"
+	echo
+	echo "When, your feature has been tested, use:"
 	echo ""
 	echo "     git flow feature finish $NAME"
 	echo
@@ -330,6 +334,121 @@ cmd_finish() {
 
 	# when no merge conflict is detected, just clean up the feature branch
 	helper_finish_cleanup
+}
+
+cmd_test() {
+	DEFINE_boolean fetch false "fetch from $ORIGIN before performing test" F
+	DEFINE_boolean rebase false "rebase instead of merge" r
+	parse_args "$@"
+	expand_nameprefix_arg
+
+	# sanity checks
+	require_branch "$BRANCH"
+
+	# detect if we're restoring from a merge conflict
+	if [ -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE" ]; then
+		#
+		# TODO: detect that we're working on the correct branch here!
+		# The user need not necessarily have given the same $NAME twice here
+		# (although he/she should).
+		#
+
+		# TODO: git_is_clean_working_tree() should provide an alternative
+		# exit code for "unmerged changes in working tree", which we should
+		# actually be testing for here
+		if git_is_clean_working_tree; then
+			FINISH_BASE=$(cat "$DOT_GIT_DIR/.gitflow/MERGE_BASE")
+
+			# Since the working tree is now clean, either the user did a
+			# succesfull merge manually, or the merge was cancelled.
+			# We detect this using git_is_branch_merged_into()
+			if git_is_branch_merged_into "$BRANCH" "$FINISH_BASE"; then
+				rm -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE"
+				helper_finish_cleanup
+				exit 0
+			else
+				# If the user cancelled the merge and decided to wait until later,
+				# that's fine. But we have to acknowledge this by removing the
+				# MERGE_BASE file and continuing normal execution of the finish
+				rm -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE"
+			fi
+		else
+			echo
+			echo "Merge conflicts not resolved yet, use:"
+			echo "    git mergetool"
+			echo "    git commit"
+			echo
+			echo "You can then complete the test by running it again:"
+			echo "    git flow feature test $NAME"
+			echo
+			exit 1
+		fi
+	fi
+
+	# sanity checks
+	require_clean_working_tree
+
+	QA_BRANCH='qa'
+	# update local repo with remote changes first, if asked
+	if has "$ORIGIN/$BRANCH" "$(git_remote_branches)"; then
+		if flag fetch; then
+			git fetch -q "$ORIGIN" "$BRANCH"
+		fi
+	fi
+
+	if has "$ORIGIN/$BRANCH" "$(git_remote_branches)"; then
+		require_branches_equal "$BRANCH" "$ORIGIN/$BRANCH"
+	fi
+	if has "$ORIGIN/$QA_BRANCH" "$(git_remote_branches)"; then
+		require_branches_equal "$QA_BRANCH" "$ORIGIN/$QA_BRANCH"
+	fi
+
+	# if the user wants to rebase, do that first
+	if flag rebase; then
+		if ! git flow feature rebase "$NAME" "$QA_BRANCH"; then
+			warn "Finish was aborted due to conflicts during rebase."
+			warn "Please finish the rebase manually now."
+			warn "When finished, re-run:"
+			warn "    git flow feature test '$NAME' '$QA_BRANCH'"
+			exit 1
+		fi
+	fi
+
+	# merge into BASE
+	git checkout "$QA_BRANCH"
+	if [ "$(git rev-list -n2 "$QA_BRANCH..$BRANCH" | wc -l)" -eq 1 ]; then
+		git merge --ff "$BRANCH"
+	else
+		git merge --no-ff "$BRANCH"
+	fi
+
+	if [ $? -ne 0 ]; then
+		# oops.. we have a merge conflict!
+		# write the given $QA_BRANCH to a temporary file (we need it later)
+		mkdir -p "$DOT_GIT_DIR/.gitflow"
+		echo "$QA_BRANCH" > "$DOT_GIT_DIR/.gitflow/MERGE_BASE"
+		echo
+		echo "There were merge conflicts. To resolve the merge conflict manually, use:"
+		echo "    git mergetool"
+		echo "    git commit"
+		echo
+		echo "You can then complete the finish by running it again:"
+		echo "    git flow feature test $NAME"
+		echo
+		exit 1
+	fi
+
+	git push
+
+	echo
+	echo "Summary of actions:"
+	echo "- Your '$BRANCH' was merge and pushed to '$QA_BRANCH'"
+	echo "- You are now on branch '$QA_BRANCH'"
+	echo ""
+	echo "Once, your feature has passed testing, use:"
+	echo ""
+	echo "     git flow feature finish $NAME"
+	echo
 }
 
 helper_finish_cleanup() {
